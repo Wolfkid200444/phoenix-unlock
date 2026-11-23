@@ -1,0 +1,99 @@
+.gitignore
+  s_061aa225ec6ba9::t_5bda3726d1d303 29-33
+AGENTS.md
+  s_061aa225ec6ba9::t_c8fb225ac284fa 18-19,33,36,39-41,66-88
+Cargo.toml
+  s_061aa225ec6ba9::t_759cc21638488c 59-65
+crates/runtime/Cargo.toml
+  s_061aa225ec6ba9::t_00a59e6e5bad6b 13-14,24-27
+crates/runtime/java/phx/Picker.java
+  s_061aa225ec6ba9::t_3b2a442657d924 5-7,9-11,134-198
+crates/runtime/java/phx/Updater.java
+  s_061aa225ec6ba9::t_619f34feb39ad8 1-578
+crates/runtime/phoenix.d.ts
+  s_061aa225ec6ba9::t_b2092845561ec1 899-900,902,908,910,963-976,988-1024,1032-1045,1061-1074,1097-1098,1115-1166,1238-1239,1244-1285,1291,1293,1338-1392
+crates/runtime/src/bridge.rs
+  s_061aa225ec6ba9::t_9d3615c65c31b6 111-116,248-257,449-456,458-469,528-563,566
+crates/runtime/src/discord.rs
+  s_061aa225ec6ba9::t_0113e183bb2774 142-246,282-294,296-369,416,423-424,426,452-468,497-528
+crates/runtime/src/gateway.rs
+  s_061aa225ec6ba9::t_164b00c7364566 342-353,357-359
+crates/runtime/src/js.rs
+  s_061aa225ec6ba9::t_dd8c37f7b1471b 52-54,64-65,67,93-96,99,102,104-119,128,203-209,212-228,338,344,346-365,368,494-578,714-817,872-880,882,884-885,890-930,1006,1013-1016,1024-1025,1065-1158,1341-1344,1346-1355,1502-1504,1609,1851-1869,1909,1926-2016,2018-2026,2029-2313,2343-2345,2495-2923,3036-3167,3169-3170,3172,3189-3254,3478,3594-3608
+crates/runtime/src/lib.rs
+  s_061aa225ec6ba9::t_a9ffa1a18e5d7b 37,186-216,223-280,457-459
+crates/runtime/src/patches/badge_details.rs
+  s_061aa225ec6ba9::t_56b704a936c265 152,212,286
+crates/runtime/src/patches/badge_slots.rs
+  s_061aa225ec6ba9::t_43a3899989e224 97
+crates/runtime/src/patches/badges.rs
+  s_061aa225ec6ba9::t_02b4df4edc6d94 13-26,95,120,125,149,168,274,370,376,378,403,427,449,453
+crates/runtime/src/patches/mirror.rs
+  s_061aa225ec6ba9::t_836aefa97ae959 1
+crates/runtime/src/patches/mod.rs
+  s_061aa225ec6ba9::t_9015b1070f285a 13,19,38-39,49-52,134,243-308,312-315,317,357-370,379,389,393-399,412-479,489-495,563,569-580,589-631,636-650,678-680,683-700,703-708,776-820,838-855,865-868,878,955,958,960-978,1002,1040-1127,1176-1185,1264-1292,1298-1318,1325-1432,1477-1585,1612-1635,1637-1639,1646-1648,1658-1660,1662-1666,1700-1793,1808-1815,1826-1828,1864,1871-1872,1874-1878,1887-1891,1895-1899,1913-1936,1960-1965,1993-1997,2007,2052-2053,2082-2086,2090-2111,2128-2152,2273-2285,2344-2350,2368-2374,2382-2383,2400,2445-3104,3328-3420,3603-3653,3813-3837
+crates/runtime/src/patches/tabs.rs
+  s_061aa225ec6ba9::t_f309afc8c521b3 67
+crates/runtime/src/patches/targets.rs
+  s_061aa225ec6ba9::t_d2e346bcd7bf85 1,347-355,371-431,440,616-622,721,725-736,819
+crates/runtime/src/picker.rs
+  s_061aa225ec6ba9::t_3d4387bc848f03 55-56,136-218,287-358,485-507,547-562
+crates/runtime/src/remote.rs
+  s_061aa225ec6ba9::t_56f607e787e7b1 1-479
+crates/runtime/src/settings.rs
+  s_061aa225ec6ba9::t_20f04ed62d7acd 140-141,144-145,412-416,572-574,580-585,928-934,937-938,1584-1631,1633,1635-1652,1659
+crates/runtime/src/update.rs
+  s_061aa225ec6ba9::t_a7dda2f00a9b25 4-12,16-23,27-28,37-46,53-65,67,70,72-94,97-100,102-104,124-134,136-138,142-143,151-234,236-248,251-349
+crates/ui/src/lib.rs
+  s_061aa225ec6ba9::t_c393b06e6c013e 27
+crates/ui/src/mirror.rs
+  s_061aa225ec6ba9::t_f2a54c03dfa111 1-624
+docs/phoenix-356207.json
+  s_061aa225ec6ba9::t_9ccf4fc25d7445 1-2270
+docs/phoenix-356207.md
+  s_061aa225ec6ba9::t_034e3253eeb531 1-153
+plugins/fix-embeds/src/index.ts
+  s_061aa225ec6ba9::t_839442aa7dedeb 1-149
+plugins/hide-composer-buttons/src/index.ts
+  s_061aa225ec6ba9::t_153978113afc65 1-45
+plugins/silent-typing/src/index.ts
+  s_061aa225ec6ba9::t_216b3b7a1795ad 1-8
+plugins/spoiler-mode/src/index.ts
+  s_061aa225ec6ba9::t_8d1100f1d7162a 1-66
+plugins/taptap/src/index.ts
+  s_061aa225ec6ba9::t_71526b7f81ce19 1-76
+plugins/view-raw/src/index.ts
+  s_061aa225ec6ba9::t_02042813d97d21 1-92
+scripts/dev.ps1
+  s_061aa225ec6ba9::t_0fa39a7babf08e 1-217
+scripts/extract-schema.py
+  s_061aa225ec6ba9::t_98169e6fa22de9 1-417
+web/app.js
+  s_061aa225ec6ba9::t_a1e4b6ff09fe22 128-133
+web/index.html
+  s_061aa225ec6ba9::t_881907c344f401 9-10,50
+web/lib/apk.js
+  s_061aa225ec6ba9::t_473c94dd0ffc85 139
+web/lib/axml.js
+  s_061aa225ec6ba9::t_27e991b4dfe753 9,34-36,48-54,78-83,90-106
+web/tools/bundle-plugins.mjs
+  s_061aa225ec6ba9::t_e75b88d5176053 26-31
+web/tools/node-build.mjs
+  s_061aa225ec6ba9::t_460f2a619dffbb 12,32-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8526b8dc6c409a2746fbbb81575667cea977bf2c",
+  "prompts": {},
+  "sessions": {
+    "s_061aa225ec6ba9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20444-4445-7703-a2b9-0d95ca568a7a",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
