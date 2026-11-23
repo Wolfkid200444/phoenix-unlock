@@ -149,7 +149,7 @@ fn metadata_draft(
          kind: ViewKind::Other("flow".into()),
          props: vec![(Prop::GAP, Value::F64(4.0))],
          kids: Vec::new(),
-         press: None,
+         src: None,         press: None,
       },
       |(flow, _, _)| visual_shallow(flow),
    );
@@ -209,7 +209,7 @@ impl Header<'_> {
                (Prop::named("scale"), Value::Str("fit".into())),
             ],
             kids: Vec::new(),
-            press: None,
+            src: None,            press: None,
          });
       }
       if node.kind == ViewKind::Text {
@@ -283,7 +283,7 @@ fn visual_shallow(node: &Node) -> Draft {
       kind: node.kind.clone(),
       props,
       kids: Vec::new(),
-      press: None,
+      src: None,      press: None,
    }
 }
 

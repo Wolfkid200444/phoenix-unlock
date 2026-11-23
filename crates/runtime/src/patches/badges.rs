@@ -10,7 +10,20 @@ use super::{
    mirror::{Mirror, prop},
 };
 
-impl Mirror {
+pub(super) trait BadgeMirror {
+   fn uri(&self, id: i32) -> Option<&str>;
+   fn is_badge_icon(&self, id: i32) -> bool;
+   fn profile_neighbor(&self, pager: i32, test: &impl Fn(i32) -> bool) -> Option<i32>;
+   fn find_control(&self, id: i32, depth: usize, test: &impl Fn(i32) -> bool) -> Option<i32>;
+   fn profile_badge_user(&self, pager: i32) -> Option<String>;
+   fn profile_badge_parent(&self, pager: i32) -> Option<i32>;
+   fn badge_directory(&self, title: i32) -> Option<i32>;
+   fn badge_counter(&self, row: i32) -> Option<(i32, usize)>;
+   fn badge_image(&self, card: i32, directory: bool) -> Option<i32>;
+   fn badge_card(&self, parent: i32) -> Option<i32>;
+}
+
+impl BadgeMirror for Mirror {
    fn uri(&self, id: i32) -> Option<&str> {
       match prop(self.props(id)?, Prop::URI)? {
          Value::Str(uri) => Some(uri),
@@ -79,7 +92,7 @@ impl Mirror {
          .find_map(|kid| self.find_control(*kid, depth - 1, test))
    }
 
-   pub fn profile_badge_user(&self, pager: i32) -> Option<String> {
+   fn profile_badge_user(&self, pager: i32) -> Option<String> {
       let avatar = self.profile_neighbor(pager, &|id| self.accessibility_id(id) == Some("Avatar"));
       let image = if let Some(avatar) = avatar {
          self.find_control(avatar, 6, &|id| {
@@ -104,12 +117,12 @@ impl Mirror {
       avatar_user(self.uri(image)?)
    }
 
-   pub fn profile_badge_parent(&self, pager: i32) -> Option<i32> {
+   fn profile_badge_parent(&self, pager: i32) -> Option<i32> {
       let image = self.profile_neighbor(pager, &|id| self.is_badge_icon(id))?;
       self.parent(self.parent(image)?)
    }
 
-   pub fn badge_directory(&self, title: i32) -> Option<i32> {
+   fn badge_directory(&self, title: i32) -> Option<i32> {
       let mut id = title;
       for _ in 0..10 {
          id = self.parent(id)?;
@@ -133,7 +146,7 @@ impl Mirror {
       None
    }
 
-   pub fn badge_counter(&self, row: i32) -> Option<(i32, usize)> {
+   fn badge_counter(&self, row: i32) -> Option<(i32, usize)> {
       self.kids(row).iter().find_map(|&kid| {
          if self.kind(kid) != Some(&ViewKind::Text) {
             return None;
@@ -152,7 +165,7 @@ impl Mirror {
          })
    }
 
-   pub fn badge_card(&self, parent: i32) -> Option<i32> {
+   fn badge_card(&self, parent: i32) -> Option<i32> {
       let directory = self
          .kind(parent)
          .is_some_and(|kind| kind.as_str() == "flow");
@@ -258,7 +271,7 @@ fn customize_card(template: &Node, image: i32, badge: &ProfileBadge) -> Draft {
          .iter()
          .map(|child| customize_card(child, image, badge))
          .collect(),
-      press: None,
+      src: None,      press: None,
    };
    node.props.retain(|(key, _)| {
       ![
@@ -354,15 +367,15 @@ mod tests {
          children(3, &[5, 7]),
          children(6, &[8]),
          children(7, &[9]),
-      ]);
+      ], true);
       assert_eq!(mirror.profile_badge_user(4).as_deref(), Some("111"));
       assert_eq!(mirror.profile_badge_user(5).as_deref(), Some("222"));
       mirror.apply(&[Op::Update {
          id: 9,
          props: vec![string(Prop::URI, "res://default_avatar")],
-      }]);
+      }], true);
       assert_eq!(mirror.profile_badge_user(5), None);
-      mirror.apply(&[children(3, &[5])]);
+      mirror.apply(&[children(3, &[5])], true);
       assert_eq!(mirror.parent(7), None);
       assert_eq!(mirror.profile_badge_user(5), None);
    }
@@ -387,7 +400,7 @@ mod tests {
          children(1, &[2, 3]),
          children(3, &[4, 6]),
          children(4, &[5]),
-      ]);
+      ], true);
       let parent = mirror.profile_badge_parent(2).unwrap();
       assert_eq!(mirror.badge_counter(parent), Some((6, 5)));
       let badge = ProfileBadge {
@@ -411,7 +424,7 @@ mod tests {
          create(4, "flow", vec![]),
          children(1, &[2, 3]),
          children(3, &[4]),
-      ]);
+      ], true);
       assert_eq!(mirror.badge_directory(2), None);
       mirror.apply(&[
          create(
@@ -433,11 +446,11 @@ mod tests {
          children(4, &[5, 7]),
          children(5, &[6]),
          children(7, &[8]),
-      ]);
+      ], true);
       mirror.apply(&[Op::Update {
          id: 8,
          props: vec![(Prop::HEIGHT, Value::F64(48.0))],
-      }]);
+      }], true);
       let parent = mirror.badge_directory(2).unwrap();
       let badge = ProfileBadge {
          label: "Test".into(),

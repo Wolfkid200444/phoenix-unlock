@@ -23,7 +23,12 @@ for (const name of readdirSync(`${root}plugins`).sort()) {
   const r = spawnSync(esbuild, [entry, '--bundle', '--format=iife', '--target=es2023', '--log-level=warning', `--banner:js=${header}`, `--outfile=${out}${name}.js`],
     { stdio: 'inherit' });
   if (r.status !== 0) process.exit(r.status ?? 1);
-  index.push({ name, description: header.match(/^\/\/ @description (.*)$/m)?.[1] ?? '' });
+  const warning = header.match(/^\/\/ @warning (.*)$/m)?.[1] ?? '';
+  index.push({
+    name,
+    description: header.match(/^\/\/ @description (.*)$/m)?.[1] ?? '',
+    ...(warning ? { warning } : {}),
+  });
 }
 writeFileSync(`${out}index.json`, JSON.stringify(index, null, 2) + '\n');
 // crates/runtime/src/update.rs marks the version as `phoenix-version:<version>;`. An older loader has none: `0`

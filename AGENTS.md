@@ -15,6 +15,8 @@ Discord's client; our tool is "Phoenix Unlock" (the code calls its runtime `phoe
   `crates/patcher/keys/` (`web/signing-key.json` holds the same key for the site): v3 only, with
   the proof of rotation from the old Valenced test key, so builds install over each other and over
   older installs. The old private key must not be added to the repo. Read `keys/README.md`.
+- **No standalone loader commits.** When a change requires rebuilding `web/plugins/libphoenix-arm64.so`,
+  squash the updated `.so` into the feature commit instead of creating separate `"Update bundled arm64 loader"` commits.
 - **Push only what works.** Test on a device before pushing.
 - **Privacy.** Screenshots and logs from the owner's phone show private chats, emails and
   accounts. Don't quote them, don't commit captures, delete screenshots after use. Some plugins
@@ -28,13 +30,15 @@ Discord's client; our tool is "Phoenix Unlock" (the code calls its runtime `phoe
 | Path | What |
 |---|---|
 | `crates/loader` | `libphoenix.so`, injected as `libplm.so`: a constructor that starts the runtime inside the host. |
-| `crates/runtime` | rquickjs plugin runtime and the `phoenix` API: gateway hooks, UI bridge, Settings → Phoenix Unlocker pages (`settings.rs`), UI patch targets (`patches/`), console, file picker (`picker.rs` + `java/phx/Picker.java` → `java/picker.dex`, rebuild with `java/build.sh`). `phoenix.d.ts` is the plugin API reference. |
+| `crates/runtime` | rquickjs plugin runtime and the `phoenix` API: gateway hooks, UI bridge, Settings → Phoenix Unlocker pages (`settings.rs`), UI patch targets (`patches/`), console, in-app OTA plugin & APK self-updater (`update.rs` + `java/phx/Updater.java`), localhost debug shell (`remote.rs`), file picker (`picker.rs` + `java/phx/Picker.java` → `java/picker.dex`, rebuild with `java/build.sh`). `phoenix.d.ts` is the plugin API reference. |
 | `crates/hook` | ShadowHook (arm) / Dobby (elsewhere) inline hooks, bytehook PLT hooks, image scanner. |
 | `crates/sigs`, `crates/sigscan` | Hook-point rules and the per-build table; `sigscan` evaluates them against a library file. |
-| `crates/ui`, `crates/wire` | Codecs for Phoenix's UI-op batches and bridge values/frames. `ui/src/props.in` is Phoenix's prop table, `templates.json` captured layouts. |
+| `crates/ui`, `crates/wire` | Codecs for Phoenix's UI-op batches, pure-Rust live `Mirror` (`crates/ui/src/mirror.rs`, host unit-testable), and bridge values/frames. `ui/src/props.in` is Phoenix's prop table, `templates.json` captured layouts. |
 | `crates/patcher` | CLI that patches the split APKs (dex launcher, host access check, `liblog.so` → `libplm.so`, adds the loader, shadowhook probe and plugin bundle) and signs them. |
 | `crates/stand-in*` | A fake Phoenix gateway library and an end-to-end demo, to test hooks without Discord. |
-| `plugins/*/src/index.ts` | Bundled plugins (TypeScript; `// @` header lines are kept as the bundle banner). |
+| `plugins/*/src/index.ts` | Bundled plugins (TypeScript; `// @` header lines are kept as the bundle banner; `// @warning` renders a warning on the site). |
+| `docs/phoenix-356207.*` | Extracted Phoenix APK schema (`scripts/extract-schema.py`): all 29 `ViewKind`s, 855 props, 79 `hostModules` / 433 methods, 109 `@events`, 286 `ic_mana_*` icons, and `accessibilityId`s. Check this first instead of decompiling APKs. |
+| `scripts/dev.ps1` | Windows fast-iteration CLI (`dev-fast` builds, 200ms plugin hot-reload, live `/ops`/`/events`/`/tree`/`/eval` inspection, host unit tests, release builds). |
 | `web/` | The browser patcher (GitHub Pages, `.github/workflows/pages.yml`), a JS port of `crates/patcher` that must stay byte-identical to it: `lib/apk.js`, `host.js`, `dex.js`, `sign.js`, `zip.js`, `axml.js`, `arsc.js`, `frida.js`. `tools/node-build.mjs` is the same pipeline as a CLI, `tools/bundle-plugins.mjs` builds `web/plugins/*.js` + `index.json`, and `web/version.json` for the runtime's update check (`crates/runtime/src/update.rs`) from the loader's baked version and the bundles' CRC-32s (build output, not committed; CI runs it). `web/plugins/libphoenix-arm64.so` is copied from a loader build. |
 | `frida/` | The optional Frida gadget bootstrap (`build.sh` → `web/plugins/frida-bootstrap.js`). |
 | `flake.nix`, `nix/`, `scripts/*.nu` | The Linux devshell and build/install scripts (`scripts/phoenix.nu` patches and installs on a phone). |
@@ -58,6 +62,29 @@ Discord's client; our tool is "Phoenix Unlock" (the code calls its runtime `phoe
   - The C: drive is nearly full: use `CARGO_TARGET_DIR` on E:.
 - **Site:** `node web/tools/bundle-plugins.mjs` (`ESBUILD=` path to esbuild), then
   `node web/tools/dev-server.mjs <dir with the splits> [port]`. The deploy workflow runs on pushes to `main`.
+
+## Fast Development Workflow
+
+Prefer this loop over full release builds and manual APK poking:
+
+1. **Look up Phoenix internals first** in `docs/phoenix-356207.md` (human-readable) or `docs/phoenix-356207.json` (machine-readable) before disassembling/decompiling. Regenerate after a Discord update with `python scripts/extract-schema.py <dir-with-splits>`.
+2. **Host unit tests (< 0.1s, no NDK/phone):** `.\scripts\dev.ps1 -Test` runs `cargo test -p phoenix-ui -p phoenix-wire` (pure Rust `Mirror` + wire codecs).
+3. **Prototype in JS before writing Rust:**
+   - Enable **Settings → Phoenix Unlocker → Debug → Remote debug shell** once on the phone (listens on `127.0.0.1:4242`, auto-forwarded by `dev.ps1`).
+   - Hot-reload a plugin in ~200ms with zero APK rebuild: `.\scripts\dev.ps1 -HotReload <plugin-name>`.
+   - Run one-off JS snippets: `.\scripts\dev.ps1 -Eval "phoenix.ui.root()"`.
+   - Use `phoenix.ui.mount(...)`, `phoenix.bridge.invoke(...)`, `phoenix.discord.onRequest(...)`, and `phoenix.discord.onResponse(...)` to iterate on UI/API patches live in JS, then promote clean shared primitives to Rust.
+4. **Live UI & event inspection (zero guessing):**
+   - `.\scripts\dev.ps1 -Logs` — runtime console log (`GET /logs`).
+   - `.\scripts\dev.ps1 -Ops [filter]` — recent decoded Phoenix UI-op batches (`GET /ops?match=...`).
+   - `.\scripts\dev.ps1 -Events [filter]` — recent view & host events (`GET /events?match=...`).
+   - `.\scripts\dev.ps1 -Tree [nodeId]` — live mirrored view tree (`GET /tree[/<id>]`).
+   - `.\scripts\dev.ps1 -Clear` — clear `/ops` and `/events` ring buffers before reproducing an action.
+5. **Fast native Rust iteration (~12–15s incremental):**
+   - `.\scripts\dev.ps1` builds with the `dev-fast` Cargo profile (`opt-level = 1`, `lto = "off"`, `codegen-units = 16`), patches using `PHOENIX_LOADER` (leaving `web/plugins/libphoenix-arm64.so` untouched in git), installs over `com.discord`, and launches Discord.
+   - `.\scripts\dev.ps1 -SkipBuild` re-bundles plugins & re-patches without recompiling Rust.
+6. **Final release build:**
+   - Run `.\scripts\dev.ps1 -Release` once verified — this builds `--release`, updates `web/plugins/libphoenix-arm64.so`, patches, installs, and launches. Squash `web/plugins/libphoenix-arm64.so` into the feature commit.
 
 ## Testing
 

@@ -94,7 +94,7 @@ impl Patches {
             kind: ViewKind::Text,
             props,
             kids: Vec::new(),
-            press: None,
+            src: None,            press: None,
          });
       }
       drafts

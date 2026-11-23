@@ -125,6 +125,12 @@ fetchOk('plugins/index.json').then((r) => r.json()).then((list) => {
     l.querySelector('input').checked = p.name !== 'example'; // a demo of the API: opt-in
     l.querySelector('b').textContent = p.name;
     l.querySelector('span').textContent = p.description;
+    if (p.warning) {
+      const w = document.createElement('small');
+      w.className = 'warn';
+      w.textContent = `\u26A0 ${p.warning}`;
+      l.append(w);
+    }
     $('jsp-bundled').append(l);
   }
 }).catch(fail);
