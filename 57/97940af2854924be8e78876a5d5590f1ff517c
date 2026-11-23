@@ -1,0 +1,14 @@
+plugins/global-badges/src/index.ts
+  h_0d2b7dea709e7c 2-4,6,11,14,16-17,20,22-23,28-29,58-75,82-83,86-88,91-104,106,109-116,118-120,122-132,134-137,151-153,173-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5797940af2854924be8e78876a5d5590f1ff517c",
+  "prompts": {},
+  "humans": {
+    "h_0d2b7dea709e7c": {
+      "author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
