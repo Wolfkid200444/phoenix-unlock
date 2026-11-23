@@ -1,0 +1,19 @@
+plugins/global-badges/src/index.ts
+  s_061aa225ec6ba9::t_57df41a1f97d23 2,4,6,11,22-23,52-69,76-77,80-82,85-98,100,103-110,112-114,116-126,128-131,145-147,167-170,172-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "283f84bca5343c467bee2a922e27d9265c13b75d",
+  "prompts": {},
+  "sessions": {
+    "s_061aa225ec6ba9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20444-4445-7703-a2b9-0d95ca568a7a",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
