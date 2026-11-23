@@ -1,43 +1,40 @@
 // @description Badges from other client mods, shown on profiles and in the badge directory
-// @version 0.4.0
-// @author iFlex0x
-// @warning Sends viewed user IDs to third-party servers (api.domi-btnr.dev, badges.vencord.dev)
+// @version 0.5.2
+// @author iFlex0x, wolfieeeeeeee
+// @warning Downloads the public badge directory from Equibadges (badges.equicord.org)
 
-const API = "https://api.domi-btnr.dev/clientmodbadges";
-const DONORS = "https://badges.vencord.dev/badges.json";
+const API = "https://badges.equicord.org/users";
 const TTL = 15 * 60 * 1000;
-const DONOR_TTL = 30 * 60 * 1000;
-const CACHE_CAP = 64;
+const RETRY_DELAY = 30 * 1000;
 const BADGE_ID_BASE = 900_000;
 
-type RawBadge = string | { name: string; badge: string };
-type Badges = Record<string, RawBadge[]>;
-type Donor = { tooltip?: string; badge: string };
-type ShownBadge = { uri: string; label: string; description: string; source: string };
+type Badge = { uri: string; name: string; source: string; rarity: number };
 
 const settings = phoenix.settings.define({
+  showCustom: {
+    type: "switch",
+    title: "Custom badges",
+    description: "Show where community badges came from in Badge Directory",
+    default: true,
+  },
   showPrefix: {
     type: "switch",
     title: "Client mod as prefix",
     description: "Show the mod name before each badge",
     default: true,
   },
-  showCustom: {
-    type: "switch",
-    title: "Custom badges",
-    description: "Show badges a mod defines itself",
-    default: true,
-  },
 });
 
-const FULL_NAMES: Record<string, string> = { hunter: "Bug Hunter", early: "Early User" };
+let users: Record<string, unknown> = {};
+let refreshAt = 0;
+let pending: Promise<void> | undefined;
 
-// vencord redesigned this in oct 2026; the clientmod api still serves the old art
-const VENCORD_CONTRIBUTOR = "https://cdn.discordapp.com/emojis/1562267648857997356.webp?size=128";
-
-// Cache raw API responses so toggling settings takes effect on the next profile open.
-const rawCache = new Map<string, { at: number; body: Badges }>();
-let donors: { at: number; byUser: Record<string, Donor[]> } | null = null;
+const providerNames = new Map(Object.entries({
+  aliucord: "Aliucord", badgevault: "BadgeVault", equicord: "Equicord",
+  nekocord: "Nekocord", raincord: "Raincord", replugged: "Replugged",
+  reviewdb: "ReviewDB", vencord: "Vencord", enmity: "Enmity",
+  velocity: "Velocity", aero: "Aero",
+}));
 let selfId: string | null = null;
 
 if (phoenix.gateway.ready) {
@@ -66,100 +63,79 @@ function toHex(text: string): string {
   return out;
 }
 
+// Badge ids must be unique per badge, not per list position: Phoenix caches
+// badge details by id, so index-based ids made every first badge show the
+// first badge the client had ever seen.
+function badgeId(uri: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < uri.length; i++) {
+    hash ^= uri.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return BADGE_ID_BASE + ((hash >>> 0) % 1_000_000_000);
+}
+
+// Route directory icons through the loader's badge-icon unwrap so the runtime
+// can size injected badge art before Phoenix draws it.
+function badgeUrl(uri: string, animated = false): string {
+  return `https://cdn.discordapp.com/badge-icons/phx_u_${toHex(uri)}${animated ? ".gif" : ".png"}`;
+}
+
 async function userIdFromPath(path: string): Promise<string | null> {
   const m = path.match(/^\/users\/(@me|\d+)\/(?:profile|badges)(?:[?#]|$)/);
   if (!m) return null;
   return m[1] === "@me" ? resolveSelfId() : m[1];
 }
 
-function badgeOf(mod: string, badge: RawBadge): ShownBadge | null {
-  if (typeof badge !== "string") {
-    if (!settings.showCustom) return null;
-    const name = badge?.name?.trim();
-    const uri = badge?.badge?.trim();
-    if (!name || !uri) return null;
-    return { uri, label: name, description: `Custom badge from ${mod}.`, source: mod };
-  }
-
-  const slug = badge.replace(mod, "").trim().split(" ")[0];
-  if (!slug) return null;
-
-  const clean = (FULL_NAMES[badge] ?? badge).replace(mod, "").trim();
-  if (!clean) return null;
-
-  const name = clean.charAt(0).toUpperCase() + clean.slice(1);
-  return {
-    uri:
-      mod === "Vencord" && slug.toLowerCase() === "contributor"
-        ? VENCORD_CONTRIBUTOR
-        : `${API}/badges/${mod}/${slug}`,
-    label: settings.showPrefix ? `${mod} ${name}` : name,
-    description:
-      slug.toLowerCase() === "contributor"
-        ? `For contributing to ${mod}.`
-        : `${mod} badge.`,
-    source: mod,
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function donorBadgesFor(userId: string): Promise<ShownBadge[]> {
-  if (!donors || Date.now() - donors.at >= DONOR_TTL) {
-    try {
-      const res = await phoenix.fetch(DONORS);
-      donors = { at: Date.now(), byUser: res.ok ? res.json<Record<string, Donor[]>>() : {} };
-    } catch {
-      donors = { at: Date.now(), byUser: {} };
-    }
-  }
+function parseBadges(entries: unknown): Badge[] {
+  if (!Array.isArray(entries)) return [];
 
-  const list = donors.byUser?.[userId];
-  if (!Array.isArray(list)) return [];
-  const out: ShownBadge[] = [];
-  for (const one of list) {
-    const uri = one?.badge?.trim();
-    if (!uri) continue;
-    out.push({
-      uri,
-      label: one.tooltip?.trim() || "Vencord Donor",
-      description: "A badge for supporting Vencord.",
-      source: "Vencord Donor",
-    });
-  }
-  return out;
-}
-
-async function badgesFor(userId: string): Promise<ShownBadge[]> {
-  let body: Badges;
-  const hit = rawCache.get(userId);
-  if (hit && Date.now() - hit.at < TTL) {
-    body = hit.body;
-  } else {
-    body = {};
-    try {
-      const res = await phoenix.fetch(`${API}/users/${userId}`);
-      if (res.ok) body = res.json<Badges>() ?? {};
-    } catch {
-      body = {};
-    }
-    if (rawCache.size >= CACHE_CAP) rawCache.clear();
-    rawCache.set(userId, { at: Date.now(), body });
-  }
-
-  const badges = await donorBadgesFor(userId);
-  for (const [mod, list] of Object.entries(body)) {
-    if (!Array.isArray(list)) continue;
-    for (const badge of list) {
-      const one = badgeOf(mod, badge);
-      if (one) badges.push(one);
-    }
-  }
-
+  const badges: Badge[] = [];
   const seen = new Set<string>();
-  return badges.filter((one) => {
-    if (seen.has(one.uri)) return false;
-    seen.add(one.uri);
-    return true;
-  });
+  for (const entry of entries) {
+    if (!isRecord(entry) || typeof entry.mod !== "string" ||
+      typeof entry.badge !== "string" || typeof entry.tooltip !== "string") continue;
+    const mod = entry.mod.trim().toLowerCase();
+    if (!mod || mod === "discord") continue;
+    const source = providerNames.get(mod) ?? entry.mod.trim();
+    const uri = entry.badge.trim();
+    const name = entry.tooltip.trim();
+    if (!name || !/^https?:\/\/[^/\s]+/i.test(uri) || seen.has(uri)) continue;
+    seen.add(uri);
+    const rarity = typeof entry.rarity === "number" && Number.isInteger(entry.rarity)
+      && entry.rarity >= 1 && entry.rarity <= 5 ? entry.rarity : 5;
+    badges.push({ uri, name, source, rarity });
+  }
+  return badges;
+}
+
+async function refreshUsers(): Promise<void> {
+  const res = await phoenix.fetch(API);
+  if (!res.ok) throw new Error(`Equibadges HTTP ${res.status}`);
+  const body = res.json<unknown>();
+  if (!isRecord(body) || !isRecord(body.users)) throw new Error("Invalid Equibadges response");
+  users = body.users;
+  refreshAt = Date.now() + TTL;
+}
+
+async function badgesFor(userId: string): Promise<Badge[]> {
+  if (Date.now() >= refreshAt) {
+    pending ??= refreshUsers()
+      .catch(() => { refreshAt = Date.now() + RETRY_DELAY; })
+      .finally(() => { pending = undefined; });
+    await pending;
+  }
+  return parseBadges(users[userId]);
+}
+
+function badgeLabel({ source, name }: Badge): string {
+  return settings.showPrefix && source !== "BadgeVault" && !name.toLowerCase().startsWith(source.toLowerCase() + " ")
+    ? `${source} ${name}`
+    : name;
 }
 
 phoenix.discord.onResponse(
@@ -173,9 +149,9 @@ phoenix.discord.onResponse(
     const extra = await badgesFor(userId);
     if (!extra.length) return;
     const existing = Array.isArray(data.badges) ? data.badges : [];
-    const injected = extra.map((b, i) => ({
-      id: `phx_gb_${i}`,
-      description: b.label,
+    const injected = extra.map((b) => ({
+      id: String(badgeId(b.uri)),
+      description: badgeLabel(b),
       icon: `phx_u_${toHex(b.uri)}`,
       simple_icon_url: b.uri,
     }));
@@ -195,16 +171,16 @@ phoenix.discord.onResponse(
     const extra = await badgesFor(userId);
     if (!extra.length) return;
     const existing = Array.isArray(data.badges) ? data.badges : [];
-    const injected = extra.map((b, i) => ({
-      badge_id: BADGE_ID_BASE + i,
-      name: b.label,
-      description: b.description,
-      info_label: b.source,
-      rarity: 5,
-      simple_icon_url: b.uri,
-      simple_icon_raster_url: b.uri,
-      complex_icon_static_url: b.uri,
-      ...(b.uri.includes(".gif") ? { complex_icon_animated_url: b.uri } : {}),
+    const injected = extra.map((b) => ({
+      badge_id: badgeId(b.uri),
+      name: badgeLabel(b),
+      description: settings.showCustom ? `Badge from ${b.source}.` : "",
+      ...(settings.showCustom ? { info_label: b.source } : {}),
+      rarity: b.rarity,
+      simple_icon_url: badgeUrl(b.uri),
+      simple_icon_raster_url: badgeUrl(b.uri),
+      complex_icon_static_url: badgeUrl(b.uri),
+      ...(/(\.gif|\.webp)(?:[?#]|$)/i.test(b.uri) ? { complex_icon_animated_url: badgeUrl(b.uri, true) } : {}),
       is_earnable: true,
       owned: true,
       hidden: false,
