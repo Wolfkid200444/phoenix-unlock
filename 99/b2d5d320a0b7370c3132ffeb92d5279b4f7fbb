@@ -1,0 +1,42 @@
+crates/runtime/src/patches/targets.rs
+  s_061aa225ec6ba9::t_0c325e5ed11a39 56-59,63,72-73,80,93-94,150-162,183,212-213,473-474
+crates/runtime/src/patches/mirror.rs
+  s_061aa225ec6ba9::t_ce5ee4c80cc866 26-28,48,63,66-67,71,73,83-94,108-145
+  s_061aa225ec6ba9::t_90ef4bc35636a5 146
+crates/runtime/src/patches/badges.rs
+  s_061aa225ec6ba9::t_b8629546569067 371-404
+  s_061aa225ec6ba9::t_bc1634fbe34310 23-25,47-51,67-72,76-79,85-87,94-100,116-120,126-129,146-152,156-163,171-177,182-189,194-199,206-208,221-240,242-249,256-260,264-272,291-370,405-452,457-464
+  s_061aa225ec6ba9::t_8bdf0364117844 5,145,153-155,252-255,261-262,285,290
+  s_061aa225ec6ba9::t_0c325e5ed11a39 1-2,6-22,26-33,37-46,52-55,61-66,73-75,80-84,88-93,101-115,121-125,130-144,164,192-193,250-251,263,273,286-289,465
+  s_061aa225ec6ba9::t_2c01004d5c72eb 56-60
+  s_061aa225ec6ba9::t_1cf2ddc06b3be8 34-36,241,453-456
+  s_061aa225ec6ba9::t_7edd3145d62b35 3-4,165-170,178-181,190-191,200-205,209-220,274-284
+crates/runtime/phoenix.d.ts
+  s_061aa225ec6ba9::t_cc94a95a471021 1026-1032,1132-1136
+crates/runtime/src/js.rs
+  s_061aa225ec6ba9::t_5962d640ff31d6 1217-1237,1427,1450,1536-1537
+crates/runtime/src/patches/badge_details.rs
+  s_061aa225ec6ba9::t_cd580a79f48fac 1-386
+crates/runtime/src/patches/badge_slots.rs
+  s_061aa225ec6ba9::t_9b9014b63a7d89 1-263
+crates/runtime/src/patches/mod.rs
+  s_061aa225ec6ba9::t_396a2b818c41f4 13-15,159-167,176,247,309,408-409,920,970,980-983,996-997,1102-1104,1117,1122-1123,1126-1129,1141-1143,1207-1210,1216,1263,1265-1268,1696-1706,1751-1754,1756-1757,1871-1882
+plugins/global-badges/src/index.ts
+  s_061aa225ec6ba9::t_8ccc651ad8f530 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99b2d5d320a0b7370c3132ffeb92d5279b4f7fbb",
+  "prompts": {},
+  "sessions": {
+    "s_061aa225ec6ba9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20444-4445-7703-a2b9-0d95ca568a7a",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
