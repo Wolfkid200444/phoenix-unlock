@@ -10,6 +10,9 @@
 //!   main thread can be waited on with the UI lock held. Plugin callbacks run
 //!   on a worker, and their results reach the screen as follow-up batches.
 
+mod badge_details;
+mod badge_slots;
+mod badges;
 mod commands;
 mod emoji;
 mod mirror;
@@ -153,6 +156,15 @@ pub struct Rendered {
    pub tint:  Option<i64>,
 }
 
+/// A community badge supplied by a profile badge contribution.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfileBadge {
+   pub icon: String,
+   pub label: String,
+   pub provider: Option<String>,
+   pub rarity: Option<String>,
+}
+
 /// A plugin's answer for one place: the text it renders, or whether its row
 /// shows.
 #[derive(Clone)]
@@ -161,6 +173,7 @@ pub enum Outcome {
    Shown(bool),
    /// A profile tab's page.
    Page(Vec<Block>),
+   Badges(Vec<ProfileBadge>),
 }
 
 /// A piece of a profile tab's page. `handler` indexes the callbacks the
@@ -231,6 +244,7 @@ pub struct UiContext {
 
 #[derive(Clone)]
 enum Handler {
+   Badge { native: i32, badge: ProfileBadge },
    Press {
       contribution: ContributionId,
       place:        Place,
@@ -292,6 +306,7 @@ impl Draft {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SlotKind {
+   BadgeDetails,
    Target(Target),
    Suggestions,
    /// A plugin menu sheet.
@@ -390,6 +405,8 @@ enum Job {
 #[derive(Default)]
 struct Patches {
    mirror:        Mirror,
+   badge_views:    badge_slots::BadgeViews,
+   badge_details:  badge_details::BadgeDetails,
    templates:     Templates,
    seen:          Seen,
    contributions: Vec<Contribution>,
@@ -900,7 +917,7 @@ impl Patches {
       let mut extra_deletes;
       {
          let (created, deleted) = self.mirror.apply(&ops);
-         extra_deletes = self.drop_deleted(&deleted);
+         extra_deletes = self.drop_deleted(&deleted, &mut touched);
          for id in &deleted {
             self.texts.remove(id);
          }
@@ -950,7 +967,7 @@ impl Patches {
          if self.suggestions.scroll.is_some() {
             self.learn_suggestion_row(&created);
          }
-         for id in named {
+         for &id in &named {
             let aid = self
                .mirror
                .accessibility_id(id)
@@ -959,6 +976,10 @@ impl Patches {
             for target in Target::ALL {
                if !target.matches(&aid) {
                   continue;
+               }
+               if target == Target::BadgeDirectory {
+                  let owner = self.badge_directory_owner();
+                  self.badge_views.directories.insert(id, owner);
                }
                self.anchors.entry(target).or_default().insert(id);
                if target == Target::Tab
@@ -972,6 +993,8 @@ impl Patches {
                }
             }
          }
+         self.update_badge_slots(&ops, &named, &mut mine, &mut touched, &mut extra_deletes);
+         self.update_badge_details(&named, &mut mine, &mut touched);
       }
 
       let composer_slash = self
@@ -1076,6 +1099,9 @@ impl Patches {
             ids: self.merged(parent),
          });
       }
+      if !extra_deletes.is_empty() {
+         out.push(Op::Delete {ids: extra_deletes});
+      }
       out.extend(extra);
       for pager in left {
          out.extend(self.leave_tab(pager, None));
@@ -1088,14 +1114,19 @@ impl Patches {
 
    /// Forgets the slots and anchors under `deleted` nodes and returns the
    /// plugin nodes that go with them.
-   fn drop_deleted(&mut self, deleted: &[i32]) -> Vec<i32> {
+   fn drop_deleted(&mut self, deleted: &[i32], touched: &mut HashSet<i32>) -> Vec<i32> {
       let mut orphans = Vec::new();
       for id in deleted {
          let (gone, kept) = std::mem::take(&mut self.slots)
             .into_iter()
-            .partition::<Vec<_>, _>(|slot| slot.parent == *id);
+            .partition::<Vec<_>, _>(|slot| slot.parent == *id || (slot.anchor == *id
+               && matches!(slot.kind, SlotKind::Target(Target::ProfileBadges | Target::BadgeDirectory))));
          self.slots = kept;
          for slot in gone {
+            if !deleted.contains(&slot.parent) {
+               touched.insert(slot.parent);
+            }
+            self.badge_views.native_visible.remove(&slot.parent);
             if let SlotKind::Menu(menu) = slot.kind
                && let Some(answer) = self.menus.remove(&menu)
             {
@@ -1107,6 +1138,9 @@ impl Patches {
          for anchors in self.anchors.values_mut() {
             anchors.remove(id);
          }
+         self.badge_views.directories.remove(id);
+         self.badge_views.native_visible.remove(id);
+         self.badge_details.deleted(*id);
          self.shown.remove(id);
          self.static_tabs.remove(id);
          self.rust_heights.remove(id);
@@ -1170,12 +1204,16 @@ impl Patches {
                queue(Job::Suggest);
             }
          }
+         if *node < FIRST_ID && *event == Prop::PRESS.key() {
+            self.seen.badge_user = self.badge_profile_pressed(*node);
+            self.badge_details.pending = None;
+         }
          if *node >= FIRST_ID
             && let Some(handler) = self.handlers.get(node).cloned()
          {
             changed = true;
             if *event == Prop::PRESS.key() {
-               self.pressed(*node, handler, &mut frames);
+               self.pressed(*node, handler, payload, &mut frames);
             } else {
                self.page_event(*node, &handler, *event, payload);
             }
@@ -1222,8 +1260,12 @@ impl Patches {
       }
    }
 
-   fn pressed(&self, node: i32, handler: Handler, frames: &mut Vec<Vec<u8>>) {
+   fn pressed(&mut self, node: i32, handler: Handler, payload: &Value, frames: &mut Vec<Vec<u8>>) {
       match handler {
+         Handler::Badge { native, badge } => {
+            self.badge_details.pending = Some(badge);
+            frames.push(encode_view_event(native, Prop::PRESS.key(), payload));
+         },
          Handler::Press {
             contribution,
             place,
@@ -1651,7 +1693,17 @@ impl Patches {
          return None;
       }
       let aid = self.mirror.accessibility_id(id)?.to_owned();
-      let placement = target.place(&self.mirror, id, &aid, &self.seen)?;
+      let directory;
+      let seen = if target == Target::BadgeDirectory {
+         directory = Seen {
+            badge_user: self.badge_views.directories.get(&id).cloned().flatten(),
+            ..Seen::default()
+         };
+         &directory
+      } else {
+         &self.seen
+      };
+      let placement = target.place(&self.mirror, id, &aid, seen)?;
       let before = placement.before.map_or(Before::End, Before::Node);
       if let Some(slot) = self
          .slots
@@ -1696,11 +1748,13 @@ impl Patches {
          }
       }
       let ids = contributions.iter().map(|contribution| contribution.id).collect::<Vec<_>>();
-      let drafts = self
-         .templates
-         .draw(target, &contributions, &place, &|contribution| {
+      let drafts = if target.drawn_by() == Target::ProfileBadges {
+         self.badge_drafts(index, target, &ids, &place)
+      } else {
+         self.templates.draw(target, &contributions, &place, &|contribution| {
             self.results.get(&(contribution.id, place.clone())).cloned()
-         });
+         })
+      };
       let mut roots = Vec::new();
       let mut all = Vec::new();
       for mut draft in drafts {
@@ -1814,6 +1868,18 @@ impl Patches {
    fn merged(&self, parent: i32) -> Vec<i32> {
       let mut list = self.mirror.kids(parent).to_vec();
       for slot in self.slots.iter().filter(|slot| slot.parent == parent) {
+         if slot.kind == SlotKind::BadgeDetails {
+            return slot.roots.clone();
+         }
+         if slot.kind == SlotKind::Target(Target::ProfileBadges)
+            && let Some(&keep) = self.badge_views.native_visible.get(&parent)
+         {
+            let counter = self.mirror.badge_counter(parent).map(|(node, _)| node);
+            list.retain(|node| Some(*node) != counter);
+            list.truncate(keep);
+            list.extend_from_slice(&slot.roots);
+            continue;
+         }
          let at = match slot.before {
             Before::Start => 0,
             Before::Node(node) => list.iter().position(|id| *id == node).unwrap_or(list.len()),

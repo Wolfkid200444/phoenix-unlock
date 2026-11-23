@@ -1214,6 +1214,27 @@ fn context_object<'js>(ctx: &Ctx<'js>, context: &UiContext) -> rquickjs::Result<
 /// A `render` or `visible` result as the patches draw it.
 #[cfg(target_os = "android")]
 fn outcome_of(target: Target, value: Option<&Value<'_>>) -> Outcome {
+   if target == Target::ProfileBadges {
+      let badges = value.and_then(Value::as_array).into_iter().flat_map(|array| {
+         array.iter::<Object<'_>>().take(100).filter_map(|item| {
+            let item = item.ok()?;
+            let icon: String = item.get("icon").ok()?;
+            let label: String = item.get("label").ok()?;
+            if !(icon.starts_with("https://") || icon.starts_with("http://"))
+               || label.trim().is_empty()
+            {
+               return None;
+            }
+            Some(patches::ProfileBadge {
+               icon,
+               label,
+               provider: item.get("provider").ok().flatten(),
+               rarity: item.get("rarity").ok().flatten(),
+            })
+         })
+      }).collect();
+      return Outcome::Badges(badges);
+   }
    if target == Target::Action {
       return Outcome::Shown(value.is_some_and(|value| {
          value
@@ -1403,7 +1424,7 @@ fn remover<'js>(
          "update",
          Function::new(ctx.clone(), move |at: rquickjs::function::Opt<String>| {
             let place = at.0.map(|at| {
-               if target == Target::Tab {
+               if matches!(target, Target::Tab | Target::ProfileBadges) {
                   Place::User(Some(at))
                } else {
                   Place::Message(at)
@@ -1426,6 +1447,7 @@ fn ui_object<'js>(ctx: &Ctx<'js>, plugin: &str) -> rquickjs::Result<Object<'js>>
       ("addMessageAccessory", Target::Content),
       ("addMessageAction", Target::Action),
       ("addProfileSection", Target::Profile),
+      ("addProfileBadges", Target::ProfileBadges),
       ("addProfileTab", Target::Tab),
    ] {
       let name = plugin.to_owned();
@@ -1511,7 +1533,8 @@ fn add_contribution<'js>(
    };
    let needs = match target {
       Target::Header | Target::Composer | Target::Action => (label.is_some(), "label and onPress"),
-      Target::Content | Target::Timestamp => (evaluate.is_some(), "render"),
+      Target::BadgeDirectory => unreachable!("directory uses profile badge contributions"),
+      Target::Content | Target::Timestamp | Target::ProfileBadges => (evaluate.is_some(), "render"),
       Target::Profile | Target::Tab | Target::TabPage => {
          (label.is_some() && evaluate.is_some(), "title and render")
       },

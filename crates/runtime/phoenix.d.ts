@@ -1023,6 +1023,13 @@ declare namespace Phoenix {
     message?: Message;
   }
 
+  interface ProfileBadge {
+    icon: string;
+    label: string;
+    provider?: string;
+    rarity?: "Common" | "Rare" | "Epic" | "Mythic";
+  }
+
   interface ProfileContext extends UiContext {
     /// Null for profiles with a default avatar.
     userId?: string;
@@ -1121,6 +1128,11 @@ declare namespace Phoenix {
       priority?: number;
       visible?(ctx: MessageContext): boolean | Promise<boolean>;
       onPress(ctx: MessageContext): void;
+    }): Remover;
+    /// Adds community badges to the native profile row and badge directory.
+    addProfileBadges(options: {
+      priority?: number;
+      render(ctx: ProfileContext): readonly ProfileBadge[] | Promise<readonly ProfileBadge[]>;
     }): Remover;
     /// A section at the end of a profile's main tab.
     addProfileSection(options: {

@@ -53,10 +53,14 @@ pub enum Target {
    Tab,
    /// The pages of profile tabs, after the profile's own pages.
    TabPage,
+   /// Custom icons alongside Phoenix's profile badges.
+   ProfileBadges,
+   /// Cards in the native badge directory for the same profile.
+   BadgeDirectory,
 }
 
 impl Target {
-   pub const ALL: [Self; 8] = [
+   pub const ALL: [Self; 10] = [
       Self::Header,
       Self::Composer,
       Self::Content,
@@ -65,12 +69,15 @@ impl Target {
       Self::Profile,
       Self::Tab,
       Self::TabPage,
+      Self::ProfileBadges,
+      Self::BadgeDirectory,
    ];
 
    /// The target whose contributions this one draws.
    pub const fn drawn_by(self) -> Self {
       match self {
          Self::TabPage => Self::Tab,
+         Self::BadgeDirectory => Self::ProfileBadges,
          other => other,
       }
    }
@@ -83,6 +90,8 @@ impl Target {
          Self::Timestamp => aid.starts_with("message.timestamp:"),
          Self::Action => aid == "message.actions.root",
          Self::Profile | Self::Tab | Self::TabPage => aid == "profile-tab-pages",
+         Self::ProfileBadges => matches!(aid, "profile-tab-pages" | "you-tab-pages"),
+         Self::BadgeDirectory => aid == "badge-directory-title",
       }
    }
 
@@ -138,6 +147,19 @@ impl Target {
                place:  Place::User(seen.profile_user.clone()),
             })
          },
+         Self::ProfileBadges => {
+            let parent = mirror.profile_badge_parent(id)?;
+            Some(Placement {
+               parent,
+               before: mirror.badge_counter(parent).map(|(id, _)| id),
+               place: Place::User(Some(mirror.profile_badge_user(id)?)),
+            })
+         },
+         Self::BadgeDirectory => Some(Placement {
+            parent: mirror.badge_directory(id)?,
+            before: None,
+            place: Place::User(Some(seen.badge_user.clone()?)),
+         }),
          Self::Tab => {
             let (row, indicator) = tab_row(mirror, id)?;
             Some(Placement {
@@ -158,7 +180,7 @@ impl Target {
 
    /// Whether drawing this target needs a plugin's `render` or `visible`.
    pub const fn evaluates(self) -> bool {
-      matches!(self, Self::Content | Self::Timestamp | Self::Profile | Self::TabPage)
+      matches!(self, Self::Content | Self::Timestamp | Self::Profile | Self::TabPage | Self::ProfileBadges | Self::BadgeDirectory)
    }
 }
 
@@ -187,6 +209,8 @@ pub fn tab_row(mirror: &Mirror, pager: i32) -> Option<(i32, i32)> {
 pub struct Seen {
    pub long_pressed: Option<String>,
    pub profile_user: Option<String>,
+   /// Owner of the native badge directory opened from a profile.
+   pub badge_user: Option<String>,
 }
 
 pub struct Placement {
@@ -446,6 +470,8 @@ impl Templates {
                })
                .collect()
          },
+         // Badge controls use the live row or grid as their template.
+         Target::ProfileBadges | Target::BadgeDirectory => Vec::new(),
          Target::Action => self.action_group(contributions, place, outcome),
          Target::Tab => {
             let Some(tab) = &self.tab else {

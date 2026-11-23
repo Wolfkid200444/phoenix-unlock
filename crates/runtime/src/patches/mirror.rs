@@ -23,6 +23,9 @@ pub struct Mirror {
    parent:   HashMap<i32, i32>,
    ids:      HashMap<i32, String>,
    sheets:   HashSet<i32>,
+   /// Live host properties let badge cards and drawers use the current theme
+   /// even when their container and contents arrived in separate batches.
+   nodes:    HashMap<i32, (ViewKind, Props)>,
    /// The list index of each virtualized list's first mounted row.
    firsts:   HashMap<i32, i32>,
    /// The message box inputs and their text, newest last.
@@ -42,6 +45,7 @@ impl Mirror {
          match op {
             Op::Create { id, kind, props } => {
                created.insert(*id, (kind, props));
+               self.nodes.insert(*id, (kind.clone(), props.clone()));
                if let Some(Value::I32(first)) = prop(props, FIRST) {
                   self.firsts.insert(*id, *first);
                }
@@ -56,22 +60,17 @@ impl Mirror {
                }
             },
             Op::Children { id, ids } => {
-               for kid in ids {
-                  self.parent.insert(*kid, *id);
-               }
-               self.kids.insert(*id, ids.clone());
+               self.replace_children(*id, ids.clone());
             },
             Op::ChildEdits { id, edits } => {
-               let old = self.kids.remove(id).unwrap_or_default();
-               let new = apply_edits(&old, edits);
-               for kid in edits.iter().flat_map(|edit| &edit.ins) {
-                  self.parent.insert(*kid, *id);
-               }
-               self.kids.insert(*id, new);
+               let new = apply_edits(self.kids(*id), edits);
+               self.replace_children(*id, new);
             },
             Op::Delete { ids } => {
                for id in ids {
+                  self.replace_children(*id, Vec::new());
                   self.kids.remove(id);
+                  self.nodes.remove(id);
                   self.parent.remove(id);
                   self.ids.remove(id);
                   self.sheets.remove(id);
@@ -81,6 +80,18 @@ impl Mirror {
                deleted.extend_from_slice(ids);
             },
             Op::Update { id, props } => {
+               if let Some((_, current)) = self.nodes.get_mut(id) {
+                  for (key, value) in props {
+                     phoenix_ui::set_prop(current, *key, Some(value.clone()));
+                  }
+               }
+               if let Some(aid) = prop(props, Prop::ACCESSIBILITY_ID) {
+                  if let Value::Str(aid) = aid {
+                     self.ids.insert(*id, aid.clone());
+                  } else {
+                     self.ids.remove(id);
+                  }
+               }
                if let Some(Value::I32(first)) = prop(props, FIRST) {
                   self.firsts.insert(*id, *first);
                }
@@ -92,6 +103,45 @@ impl Mirror {
          }
       }
       (created, deleted)
+   }
+
+   fn replace_children(&mut self, id: i32, kids: Vec<i32>) {
+      if let Some(old) = self.kids.get(&id) {
+         for kid in old {
+            if self.parent.get(kid) == Some(&id) {
+               self.parent.remove(kid);
+            }
+         }
+      }
+      for kid in &kids {
+         self.parent.insert(*kid, id);
+      }
+      self.kids.insert(id, kids);
+   }
+
+   pub fn kind(&self, id: i32) -> Option<&ViewKind> {
+      self.nodes.get(&id).map(|(kind, _)| kind)
+   }
+
+   pub fn props(&self, id: i32) -> Option<&Props> {
+      self.nodes.get(&id).map(|(_, props)| props)
+   }
+
+   pub fn text(&self, id: i32) -> Option<&str> {
+      match prop(self.props(id)?, Prop::TEXT)? {
+         Value::Str(text) => Some(text),
+         _ => None,
+      }
+   }
+
+   pub fn live_snapshot(&self, id: i32) -> Option<Node> {
+      let (kind, props) = self.nodes.get(&id)?;
+      Some(Node {
+         kind: kind.clone(),
+         props: props.clone(),
+         kids: self.kids(id).iter().map(|kid| self.live_snapshot(*kid)).collect::<Option<_>>()?,
+         src: u32::try_from(id).ok(),
+      })
    }
 
    /// The row at list index `index` of the virtualized list `id`.
