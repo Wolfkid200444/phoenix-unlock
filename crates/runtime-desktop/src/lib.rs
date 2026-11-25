@@ -13,6 +13,7 @@ mod js;
 mod message;
 mod modal;
 mod os;
+mod previews;
 mod settings;
 mod staff;
 
@@ -208,6 +209,9 @@ impl Platform for Desktop {
       api: &Object<'js>,
       messages: &Object<'js>,
    ) -> rquickjs::Result<()> {
+      if badges::media_fetch_available() {
+         previews::api(ctx, api)?;
+      }
       js::ui::desktop_patch_api(ctx, plugin, api, messages)
    }
 

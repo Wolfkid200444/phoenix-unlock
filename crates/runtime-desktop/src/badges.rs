@@ -81,6 +81,10 @@ pub fn install(image: &Image<'static>) {
    log::info!("desktop badges: hooked libdiscord_media::fetch @ {func:#x}");
 }
 
+pub(crate) fn media_fetch_available() -> bool {
+   ORIG_MEDIA_FETCH.get().is_some()
+}
+
 fn decode_hex_url(hex: &str) -> Option<String> {
    if hex.is_empty() || !hex.len().is_multiple_of(2) {
       return None;
@@ -121,9 +125,9 @@ unsafe fn media_fetch_detour(
          // `libdiscord_media`.
          let bytes = unsafe { slice::from_raw_parts(url_ptr, url_len) };
          let url = str::from_utf8(bytes).ok()?;
-         let decoded = unwrap_badge_url(url)?;
+         let decoded = crate::previews::resolve_url(url).or_else(|| unwrap_badge_url(url))?;
          // The returned future borrows `&str` across `.await` points, so intern
-         // it to `'static` lifetime (bounded by distinct badge URLs seen).
+         // it to `'static` lifetime (bounded by distinct media URLs seen).
          Some(gpui::intern_str(&decoded))
       }))
       .ok()

@@ -970,6 +970,11 @@ declare namespace Phoenix {
 
   interface Api {
     readonly gateway: Gateway;
+    /** Registers a badge-free still image preview. Available on desktop when the media hook loads. */
+    readonly media?: {
+      blurredPreview(url: string, radius: number, kind: "attachment" | "embed" | "video", placeholder?: string): string | null;
+      revealPreview(previewUrl: string): void;
+    };
     /// Observes a hook point after the client handled it.
     on<P>(sig: Sig<P>, listener: (payload: P) => void): void;
     hook<P>(sig: Sig<P>, hooks: Hooks<P>): void;
