@@ -2,8 +2,7 @@
 // @version 0.1.0
 // @author wolfieeeeeeee
 
-const { gateway, media } = phoenix;
-const PREVIEW_PREFIX = "https://media.discordapp.net/attachments/0/0/phoenix-preview-";
+const { gateway } = phoenix;
 
 const settings = phoenix.settings.define({
   allChannels: {
@@ -14,7 +13,6 @@ const settings = phoenix.settings.define({
   },
 });
 
-const BLUR_RADIUS = 64;
 const CHANNEL_TTL_MS = 60_000;
 const IMAGE_EXTENSION = /\.(?:gif|jpe?g|png|webp)$/i;
 const VIDEO_EXTENSION = /\.(?:m4v|mkv|mov|mp4|webm)$/i;
@@ -78,161 +76,105 @@ const isAgeRestricted = async (id: string) => {
     : false;
 }
 
-type MessageMedia = Pick<Phoenix.Message,
-  "attachments" | "embeds" | "referenced_message" | "message_snapshots"
-> & Partial<Pick<Phoenix.Message, "components">>;
+const visual = (filename: string, contentType?: string) =>
+  /^(?:image|video)\//i.test(contentType ?? "") ||
+  IMAGE_EXTENSION.test(filename) || VIDEO_EXTENSION.test(filename);
 
-type GalleryEmbed = Phoenix.Embed & {
-  images?: Phoenix.EmbedMedia[];
-  components?: Phoenix.Component[];
-};
-
-const embedMedia = (embed: GalleryEmbed) => [embed.image, embed.thumbnail, ...(embed.images ?? [])];
-const loggedEmbedShapes = new Set<string>();
-
-const logEmbedShape = (embed: GalleryEmbed, rewritten: boolean) => {
-  const known = ["image", "rich", "video", "gifv", "link", "article", "components"];
-  const type = embed.type && known.includes(embed.type) ? embed.type : "other";
-  const shape = `type=${type} image=${Boolean(embed.image)} thumbnail=${Boolean(embed.thumbnail)} video=${Boolean(embed.video)} gallery=${Boolean(embed.images?.length)} components=${Boolean(embed.components?.length)} rewritten=${rewritten}`;
-  if (loggedEmbedShapes.has(shape)) return;
-  loggedEmbedShapes.add(shape);
-  phoenix.log.info(`nsfw-blur: embed ${shape}`);
-};
-
-const componentMedia = (components: Phoenix.Component[]): Phoenix.UnfurledMediaItem[] =>
-  components.flatMap((component) => {
+const spoilerComponents = (components: Phoenix.Component[]): boolean => {
+  let changed = false;
+  for (const component of components) {
     switch (component.type) {
       case 9:
-        return component.accessory.type === 11 ? [component.accessory.media] : [];
+        if (component.accessory.type === 11 && !component.accessory.spoiler) {
+          component.accessory.spoiler = true;
+          changed = true;
+        }
+        break;
       case 11:
-        return [component.media];
+        if (!component.spoiler) {
+          component.spoiler = true;
+          changed = true;
+        }
+        break;
       case 12:
-        return component.items.map((item) => item.media);
+        for (const item of component.items) {
+          if (!item.spoiler) {
+            item.spoiler = true;
+            changed = true;
+          }
+        }
+        break;
       case 17:
-        return componentMedia(component.components);
-      default:
-        return [];
+        if (spoilerComponents(component.components)) changed = true;
+        break;
     }
-  });
-
-const blurPreview = (media: { url: string; proxy_url?: string; placeholder?: string }, radius: number, kind: "attachment" | "embed" | "video") => {
-  const source = media.proxy_url || media.url;
-  if (source.startsWith(PREVIEW_PREFIX)) return false;
-  const placeholder = kind === "video" ? media.placeholder : undefined;
-  const preview = phoenix.media?.blurredPreview(source, radius, kind, placeholder) ??
-    (media.proxy_url && media.url !== source ? phoenix.media?.blurredPreview(media.url, radius, kind, placeholder) : undefined);
-  if (!preview) return false;
-  // The video player can use either URL directly, outside the image fetch hook.
-  if (kind === "video") return false;
-  media.proxy_url = preview;
-  return true;
-};
-
-const blurEmbed = (embed: GalleryEmbed, radius: number) => {
-  let changed = false;
-  for (const image of embedMedia(embed)) {
-    if (image && blurPreview(image, radius, "embed") && image.proxy_url) {
-      image.url = image.proxy_url;
-      changed = true;
-    }
-  }
-  for (const item of componentMedia(embed.components ?? [])) {
-    if (blurComponent(item, radius)) changed = true;
-  }
-  if (embed.video && blurPreview(embed.video, radius, "video")) changed = true;
-  const poster = embedMedia(embed).find((image) => image?.url.startsWith(PREVIEW_PREFIX));
-  if (!poster?.url.startsWith(PREVIEW_PREFIX)) return changed;
-
-  if (embed.type === "image" && embed.url !== poster.url) {
-    embed.url = poster.url;
-    return true;
   }
   return changed;
 };
 
-const blurComponent = (item: Phoenix.UnfurledMediaItem, radius: number) => {
-  if (/^video\//i.test(item.content_type ?? "") || VIDEO_EXTENSION.test(item.url.split("?", 1)[0])) {
-    return blurPreview(item, radius, "video");
-  }
-  if (item.content_type && !/^image\//i.test(item.content_type)) return false;
-  if (!blurPreview(item, radius, "embed") || !item.proxy_url) return false;
-  item.url = item.proxy_url;
+type MessageMedia = Pick<Phoenix.Message,
+  "content" | "attachments" | "embeds" | "referenced_message" | "message_snapshots"
+> & Partial<Pick<Phoenix.Message, "components">>;
+
+type ComponentEmbed = Phoenix.Embed & { components?: Phoenix.Component[] };
+
+const spoilerEmbed = (embed: ComponentEmbed): boolean => {
+  if (embed.components) return spoilerComponents(embed.components);
+  const images = [embed.image, embed.thumbnail].filter((item) => item !== undefined);
+  const media = embed.video ? [embed.video] : images;
+  if (!media.length) return false;
+
+  const components: Phoenix.Component[] = [];
+  const text = [
+    embed.author?.name,
+    embed.title,
+    embed.description,
+    ...(embed.fields ?? []).map((field) => `${field.name}\n${field.value}`),
+  ].filter(Boolean).join("\n\n");
+  if (text) components.push({ type: 10, content: text });
+  components.push({
+    type: 12,
+    items: media.map((item) => ({
+      media: { ...item },
+      description: item.description,
+      spoiler: true,
+    })),
+  });
+  const footer = [embed.footer?.text, embed.provider?.name, embed.timestamp]
+    .filter(Boolean).join(" · ");
+  if (footer) components.push({ type: 10, content: footer });
+
+  embed.type = "components";
+  embed.components = [{ type: 17, accent_color: embed.color, components }];
+  delete embed.image;
+  delete embed.thumbnail;
+  delete embed.video;
   return true;
 };
 
-const transformMessage = (message: MessageMedia | null | undefined, radius: number): boolean => {
+const transformMessage = (message: MessageMedia | null | undefined): boolean => {
   if (!message) return false;
-
   let changed = false;
   for (const attachment of message.attachments ?? []) {
-    if (/^video\//i.test(attachment.content_type ?? "") || VIDEO_EXTENSION.test(attachment.filename)) {
-      if (blurPreview(attachment, radius, "video")) changed = true;
-      continue;
+    if (!visual(attachment.filename, attachment.content_type)) continue;
+    if (attachment.is_spoiler && ((attachment.flags ?? 0) & 8)) continue;
+    attachment.is_spoiler = true;
+    attachment.flags = (attachment.flags ?? 0) | 8;
+    if (!attachment.filename.startsWith("SPOILER_")) {
+      attachment.filename = `SPOILER_${attachment.filename}`;
     }
-    if (!/^image\//i.test(attachment.content_type ?? "") &&
-        !IMAGE_EXTENSION.test(attachment.filename)) continue;
-    if (blurPreview(attachment, radius, "attachment")) changed = true;
+    changed = true;
   }
   for (const embed of message.embeds ?? []) {
-    const original = { ...embed };
-    const rewritten = blurEmbed(embed, radius);
-    logEmbedShape(original, rewritten);
-    if (rewritten) changed = true;
+    if (spoilerEmbed(embed)) changed = true;
   }
-  for (const item of componentMedia(message.components ?? [])) {
-    if (blurComponent(item, radius)) changed = true;
-  }
-  if (transformMessage(message.referenced_message, radius)) changed = true;
+  if (spoilerComponents(message.components ?? [])) changed = true;
+  if (transformMessage(message.referenced_message)) changed = true;
   for (const snapshot of message.message_snapshots ?? []) {
-    if (transformMessage(snapshot.message, radius)) changed = true;
+    if (transformMessage(snapshot.message)) changed = true;
   }
   return changed;
 };
-
-const videoLinks = (message: Phoenix.Message | undefined) => {
-  const attachments = (message?.attachments ?? []).filter((attachment) =>
-    /^video\//i.test(attachment.content_type ?? "") || VIDEO_EXTENSION.test(attachment.filename),
-  );
-  const embeds: GalleryEmbed[] = message?.embeds ?? [];
-  const components = componentMedia([
-    ...(message?.components ?? []), ...embeds.flatMap((embed) => embed.components ?? []),
-  ]).filter((item) => /^video\//i.test(item.content_type ?? ""));
-  return [...attachments, ...embeds.flatMap((embed) => embed.video ? [embed.video] : []), ...components];
-};
-
-const previewLinks = (message: Phoenix.Message | undefined) => {
-  const links = [
-    ...(message?.attachments ?? []).map((attachment) => attachment.proxy_url),
-    ...(message?.embeds ?? []).flatMap((value: GalleryEmbed) => [
-      ...embedMedia(value), value.video, ...componentMedia(value.components ?? []),
-    ].map((item) => item?.proxy_url)),
-    ...componentMedia(message?.components ?? []).map((item) => item.proxy_url),
-  ];
-  return [...new Set(links.filter((url) => url?.startsWith(PREVIEW_PREFIX)))];
-};
-
-if (media) {
-  phoenix.ui.addMessageAction({
-    label: "Open unblurred media",
-    visible: ({ message }) => previewLinks(message).length > 0 || videoLinks(message).length > 0,
-    async onPress({ message }) {
-      const previews = previewLinks(message);
-      const videos = videoLinks(message);
-      const options = [
-        ...previews.map((_, index) => `Preview ${index + 1}`),
-        ...videos.map((_, index) => videos.length === 1 ? "Original video" : `Original video ${index + 1}`),
-      ];
-      const index = options.length === 1 ? 0 : await phoenix.ui.choose({
-        title: "Open unblurred media",
-        options,
-      });
-      const video = videos[index - previews.length];
-      const preview = video?.url || video?.proxy_url || previews[index];
-      if (preview) media.revealPreview(preview);
-      else if (video) phoenix.ui.toast("The original video URL is unavailable");
-    },
-  });
-}
 
 for (const event of [gateway.channelCreate, gateway.channelUpdate, gateway.threadCreate, gateway.threadUpdate]) {
   if (!event) continue;
@@ -250,10 +192,9 @@ for (const event of [gateway.messageCreate, gateway.messageUpdate]) {
   if (!event) continue;
   phoenix.hook(event, {
     before(message) {
-      if (!phoenix.media) return;
       const id = message.channel_id;
       if (settings.allChannels) {
-        transformMessage(message, BLUR_RADIUS);
+        transformMessage(message);
         return;
       }
       if (typeof id !== "string" || !/^\d+$/.test(id)) return;
@@ -264,7 +205,7 @@ for (const event of [gateway.messageCreate, gateway.messageUpdate]) {
         void isAgeRestricted(id);
       }
       if (channel?.nsfw || (parentId && channels.get(parentId)?.channel.nsfw)) {
-        transformMessage(message, BLUR_RADIUS);
+        transformMessage(message);
       }
     },
   });
@@ -272,7 +213,7 @@ for (const event of [gateway.messageCreate, gateway.messageUpdate]) {
 
 const transformResponse = async (res: Phoenix.InterceptedResponse) => {
   const id = MESSAGE_PATH.exec(res.path)?.[1];
-  if (!phoenix.media || !id || res.status !== 200) return;
+  if (!id || res.status !== 200) return;
   if (!settings.allChannels && !(await isAgeRestricted(id))) return;
 
   const data = res.json<MessageMedia[] | MessageMedia>();
@@ -280,7 +221,7 @@ const transformResponse = async (res: Phoenix.InterceptedResponse) => {
 
   let changed = false;
   for (const message of Array.isArray(data) ? data : [data]) {
-    if (transformMessage(message, BLUR_RADIUS)) changed = true;
+    if (transformMessage(message)) changed = true;
   }
   return changed ? { body: data } : undefined;
 };
